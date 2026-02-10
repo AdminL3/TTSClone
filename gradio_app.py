@@ -1,17 +1,4 @@
 
-import torch
-print(torch.__version__)
-
-from functools import partial
-from typing import Tuple, Any
-from pathlib import Path
-import warnings
-import logging
-import secrets
-import time
-import json
-import gradio as gr
-import torchaudio
 from inference import (
     load_model_from_hf,
     load_fish_ae_from_hf,
@@ -23,6 +10,19 @@ from inference import (
     compile_fish_ae,
     sample_euler_cfg_independent_guidances
 )
+import torchaudio
+import gradio as gr
+import json
+import time
+import secrets
+import logging
+import warnings
+from pathlib import Path
+from typing import Tuple, Any
+from functools import partial
+import torch
+print(torch.__version__)
+
 
 # see lines ~40-50 for running on lower VRAM GPUs
 
@@ -1036,5 +1036,6 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
 
 if __name__ == "__main__":
     demo.launch(
+        share=True,
         allowed_paths=[str(AUDIO_PROMPT_FOLDER)]
     )
