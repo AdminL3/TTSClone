@@ -386,11 +386,11 @@ def generate_audio(
         gr.update(),
         gr.update(value=str(output_path), visible=True),
         gr.update(value=text_display, visible=True),
-        gr.update(value=str(original_output_path) if original_output_path else None,
-                  visible=(show_original_audio and speaker_audio is not None)),
+        gr.update(value=str(original_output_path)
+                  if original_output_path else None, visible=True),
         gr.update(value=time_str, visible=True),
-        gr.update(value=str(recon_output_path) if recon_output_path else None,
-                  visible=(reconstruct_first_30_seconds and speaker_audio is not None)),
+        gr.update(value=str(recon_output_path)
+                  if recon_output_path else None, visible=True),
         gr.update(visible=(show_original_audio and speaker_audio is not None)),
         gr.update(
             visible=(reconstruct_first_30_seconds and speaker_audio is not None)),
@@ -429,8 +429,7 @@ def generate_audio_batch(
     global model_compiled, fish_ae_compiled
 
     # Split by sentences and combine to optimal length (100-150 chars per chunk)
-    paragraphs = smart_split_by_sentences(
-        text_prompt, target_min=100, target_max=150)
+    paragraphs = smart_split_by_sentences(text_prompt, target_min=100, target_max=150)
 
     # Handle edge cases
     if not paragraphs:
@@ -1094,7 +1093,7 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
                 label="Show Autoencoder Reconstruction (only first 30s of reference)", value=False
             )
 
-    gr.Markdown("# Results")
+    gr.Markdown("# Generation")
     generation_time_display = gr.Markdown("", visible=False)
 
     # Single file output (original)
@@ -1103,15 +1102,6 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
             generated_audio = gr.Audio(
                 label="Generated Audio", visible=True)
         text_prompt_display = gr.Markdown("", visible=False)
-
-    # Reference audio section (for original and reconstructed audio)
-    with gr.Group(visible=False) as reference_section:
-        gr.Markdown("### Reference Audio")
-        with gr.Row():
-            original_audio = gr.Audio(
-                label="Original Audio (5-min cropped mono)", visible=False)
-            recon_audio = gr.Audio(
-                label="Autoencoder Reconstruction (first 30s)", visible=False)
 
     # Batch output (new)
     with gr.Group(visible=False) as batch_output_group:
@@ -1200,13 +1190,16 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
             try:
                 zip_file, summary, visibility = generate_audio_batch(*args)
                 return (
+                    gr.update(),  # generated_section
                     gr.update(visible=False),  # generated_audio (hide)
                     gr.update(visible=False),  # text_prompt_display (hide)
                     gr.update(visible=False),  # single_output_group (hide)
-                    gr.update(visible=False),  # generation_time_display (hide)
                     gr.update(visible=False),  # original_audio (hide)
-                    gr.update(visible=False),  # recon_audio (hide)
-                    gr.update(visible=False),  # reference_section (hide)
+                    gr.update(visible=False),  # generation_time_display (hide)
+                    gr.update(visible=False),  # reference_audio (hide)
+                    gr.update(visible=False),  # original_accordion (hide)
+                    gr.update(visible=False),  # reference_accordion (hide)
+                    gr.update(visible=False),  # reference_audio_header (hide)
                     zip_file,  # batch_zip_download
                     summary,  # batch_summary_display
                     visibility,  # batch_output_group
@@ -1214,40 +1207,28 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
             except Exception as e:
                 error_msg = f"### Error\n\n{str(e)}"
                 return (
+                    gr.update(),  # generated_section
                     gr.update(visible=False),  # generated_audio
                     gr.update(visible=False),  # text_prompt_display
                     gr.update(visible=False),  # single_output_group
-                    gr.update(visible=False),  # generation_time_display
                     gr.update(visible=False),  # original_audio
-                    gr.update(visible=False),  # recon_audio
-                    gr.update(visible=False),  # reference_section
+                    gr.update(visible=False),  # generation_time_display
+                    gr.update(visible=False),  # reference_audio
+                    gr.update(visible=False),  # original_accordion
+                    gr.update(visible=False),  # reference_accordion
+                    gr.update(visible=False),  # reference_audio_header
                     gr.update(visible=False),  # batch_zip_download
                     # batch_summary_display
                     gr.update(value=error_msg, visible=True),
                     gr.update(visible=True),  # batch_output_group
                 )
         else:
-            # Return single outputs - properly unpack all 9 values from generate_audio
-            (
-                _,  # unused first update
-                audio_output,  # generated_audio
-                text_display,  # text_prompt_display
-                original_audio_output,  # original_audio
-                time_display,  # generation_time_display
-                recon_audio_output,  # recon_audio
-                original_visibility,  # original_audio visibility
-                recon_visibility,  # recon_audio visibility
-                reference_section_visibility,  # reference_section visibility
-            ) = generate_audio(*args)
-
+            # Return single outputs (existing behavior)
+            outputs = generate_audio(*args)
+            # Add gr.update(visible=False) for batch components
             return (
-                audio_output,  # generated_audio
-                text_display,  # text_prompt_display
+                *outputs,
                 gr.update(visible=True),  # single_output_group (show)
-                time_display,  # generation_time_display
-                original_audio_output,  # original_audio
-                recon_audio_output,  # recon_audio
-                reference_section_visibility,  # reference_section
                 gr.update(visible=False),  # batch_zip_download (hide)
                 gr.update(visible=False),  # batch_summary_display (hide)
                 gr.update(visible=False),  # batch_output_group (hide)
@@ -1287,9 +1268,6 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
             text_prompt_display,
             single_output_group,
             generation_time_display,
-            original_audio,
-            recon_audio,
-            reference_section,
             batch_zip_download,
             batch_summary_display,
             batch_output_group,
