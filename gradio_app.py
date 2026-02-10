@@ -422,7 +422,8 @@ def generate_audio_batch(
     num_steps_int = min(max(int(num_steps), 1), 80)
     rng_seed_int = int(rng_seed) if rng_seed is not None else 0
     cfg_scale_text_val = float(cfg_scale_text)
-    cfg_scale_speaker_val = float(cfg_scale_speaker) if cfg_scale_speaker is not None else None
+    cfg_scale_speaker_val = float(
+        cfg_scale_speaker) if cfg_scale_speaker is not None else None
     cfg_min_t_val = float(cfg_min_t)
     cfg_max_t_val = float(cfg_max_t)
     truncation_factor_val = float(truncation_factor)
@@ -431,9 +432,12 @@ def generate_audio_batch(
 
     speaker_kv_enabled = bool(force_speaker)
     if speaker_kv_enabled:
-        speaker_kv_scale_val = float(speaker_kv_scale) if speaker_kv_scale is not None else None
-        speaker_kv_min_t_val = float(speaker_kv_min_t) if speaker_kv_min_t is not None else None
-        speaker_kv_max_layers_val = int(speaker_kv_max_layers) if speaker_kv_max_layers is not None else None
+        speaker_kv_scale_val = float(
+            speaker_kv_scale) if speaker_kv_scale is not None else None
+        speaker_kv_min_t_val = float(
+            speaker_kv_min_t) if speaker_kv_min_t is not None else None
+        speaker_kv_max_layers_val = int(
+            speaker_kv_max_layers) if speaker_kv_max_layers is not None else None
     else:
         speaker_kv_scale_val = None
         speaker_kv_min_t_val = None
@@ -441,20 +445,25 @@ def generate_audio_batch(
 
     # Load speaker audio ONCE for all paragraphs
     use_zero_speaker = not speaker_audio_path or speaker_audio_path == ""
-    speaker_audio = load_audio(speaker_audio_path).cuda() if not use_zero_speaker else None
+    speaker_audio = load_audio(
+        speaker_audio_path).cuda() if not use_zero_speaker else None
 
     # Compute padding lengths (using first paragraph as reference)
     if use_custom_shapes:
         actual_text_byte_length = len(paragraphs[0].encode("utf-8")) + 1
         AE_DOWNSAMPLE_FACTOR = 2048
         if speaker_audio is not None:
-            actual_speaker_latent_length = (speaker_audio.shape[-1] // AE_DOWNSAMPLE_FACTOR) // 4 * 4
+            actual_speaker_latent_length = (
+                speaker_audio.shape[-1] // AE_DOWNSAMPLE_FACTOR) // 4 * 4
         else:
             actual_speaker_latent_length = 0
 
-        pad_to_max_text_length = find_min_bucket_gte(max_text_byte_length, actual_text_byte_length)
-        pad_to_max_speaker_latent_length = find_min_bucket_gte(max_speaker_latent_length, actual_speaker_latent_length)
-        sample_latent_length_val = int(sample_latent_length) if sample_latent_length.strip() else (DEFAULT_SAMPLE_LATENT_LENGTH or 640)
+        pad_to_max_text_length = find_min_bucket_gte(
+            max_text_byte_length, actual_text_byte_length)
+        pad_to_max_speaker_latent_length = find_min_bucket_gte(
+            max_speaker_latent_length, actual_speaker_latent_length)
+        sample_latent_length_val = int(sample_latent_length) if sample_latent_length.strip(
+        ) else (DEFAULT_SAMPLE_LATENT_LENGTH or 640)
     else:
         pad_to_max_text_length = None
         pad_to_max_speaker_latent_length = None
@@ -482,7 +491,8 @@ def generate_audio_batch(
     errors = []
 
     for idx, paragraph_text in enumerate(paragraphs, start=1):
-        progress((idx - 1) / len(paragraphs), desc=f"Generating paragraph {idx}/{len(paragraphs)}")
+        progress((idx - 1) / len(paragraphs),
+                 desc=f"Generating paragraph {idx}/{len(paragraphs)}")
 
         try:
             # Call sample_pipeline for this paragraph
@@ -518,7 +528,8 @@ def generate_audio_batch(
     progress(0.95, desc="Creating ZIP file...")
 
     if not audio_files:
-        raise ValueError("All paragraphs failed to generate. Check the errors above.")
+        raise ValueError(
+            "All paragraphs failed to generate. Check the errors above.")
 
     zip_path = create_zip_file(audio_files, session_id)
 
@@ -815,39 +826,15 @@ def init_session():
 
 
 with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
-    gr.Markdown("# Echo-TTS")
-    gr.Markdown(
-        "*Jordan Darefsky, 2025. See technical details [here](https://jordandarefsky.com/blog/2025/echo/)*")
-
-    gr.Markdown(
-        "**License Notice:** All audio outputs are subject to non-commercial use [CC-BY-NC-SA-4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).")
-
-    gr.Markdown("**Responsible Use:** Do not use this model to impersonate real people without their explicit consent or to generate deceptive audio.")
-
-    with gr.Accordion("📖 Quick Start Instructions", open=True):
-        gr.Markdown(
-            """
-            1. Upload or record a short reference clip (or leave blank for no speaker reference).
-            2. Pick a text preset or type your own prompt.
-            3. Click **Generate Audio**.
-
-            <div class="tip-box">
-            💡 **Tip:** If the generated voice does not match the reference, enable "Force Speaker" and regenerate.
-            </div>
-            """
-        )
-
     session_id_state = gr.State(None)
 
     gr.Markdown("# Speaker Reference")
     custom_audio_input = gr.Audio(
         sources=["upload"],
         type="filepath",
-        label="Speaker Reference Audio (first five minutes used; blank for no speaker reference)",
+        label="Speaker Reference Audio (first five minutes used)",
         max_length=600,
     )
-
-    gr.HTML('<hr class="section-separator">')
     gr.Markdown("# Text Prompt")
     text_prompt = gr.Textbox(
         label="Text Prompt", placeholder="[S1] Enter your text prompt here...", lines=4)
@@ -858,9 +845,7 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
         info="Split text by newline (\\n) and generate separate audio files. Downloads as ZIP."
     )
 
-    gr.HTML('<hr class="section-separator">')
     gr.Markdown("# Generation")
-
     with gr.Row():
         with gr.Column(scale=1):
             pass
@@ -875,7 +860,7 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
         with gr.Column(scale=1):
             pass
 
-    with gr.Accordion("⚙️ Generation Parameters", open=True):
+    with gr.Accordion("⚙️ Generation Parameters", open=False):
         with gr.Row(equal_height=False):
             presets = load_sampler_presets()
             preset_keys = list(presets.keys())
@@ -1060,32 +1045,21 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
                 label="Show Autoencoder Reconstruction (only first 30s of reference)", value=False
             )
 
-    gr.HTML('<hr class="section-separator">')
-    with gr.Accordion("Generated Audio", open=True, visible=True) as generated_section:
-        generation_time_display = gr.Markdown("", visible=False)
+    gr.Markdown("# Generation")
+    generation_time_display = gr.Markdown("", visible=False)
 
-        # Single file output (original)
-        with gr.Group(visible=True) as single_output_group:
-            with gr.Group(elem_classes=["generated-audio-player"]):
-                generated_audio = gr.Audio(label="Generated Audio", visible=True)
-            text_prompt_display = gr.Markdown("", visible=False)
+    # Single file output (original)
+    with gr.Group(visible=True) as single_output_group:
+        with gr.Group(elem_classes=["generated-audio-player"]):
+            generated_audio = gr.Audio(
+                label="Generated Audio", visible=True)
+        text_prompt_display = gr.Markdown("", visible=False)
 
-        # Batch output (new)
-        with gr.Group(visible=False) as batch_output_group:
-            batch_summary_display = gr.Markdown("", visible=False)
-            batch_zip_download = gr.File(label="Download All Audio Files (ZIP)", visible=True)
-
-        gr.Markdown("---")
-        reference_audio_header = gr.Markdown(
-            "#### Reference Audio", visible=False)
-
-        with gr.Accordion("Original Audio (5 min Cropped Mono)", open=False, visible=False) as original_accordion:
-            original_audio = gr.Audio(
-                label="Original Reference Audio (5 min)", visible=True)
-
-        with gr.Accordion("Autoencoder Reconstruction of First 30s of Reference", open=False, visible=False) as reference_accordion:
-            reference_audio = gr.Audio(
-                label="Decoded Reference Audio (30s)", visible=True)
+    # Batch output (new)
+    with gr.Group(visible=False) as batch_output_group:
+        batch_summary_display = gr.Markdown("", visible=False)
+        batch_zip_download = gr.File(
+            label="Download All Audio Files (ZIP)", visible=True)
 
     # Event handlers
     mode_selector.change(toggle_mode, inputs=[mode_selector], outputs=[
@@ -1196,7 +1170,8 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
                     gr.update(visible=False),  # reference_accordion
                     gr.update(visible=False),  # reference_audio_header
                     gr.update(visible=False),  # batch_zip_download
-                    gr.update(value=error_msg, visible=True),  # batch_summary_display
+                    # batch_summary_display
+                    gr.update(value=error_msg, visible=True),
                     gr.update(visible=True),  # batch_output_group
                 )
         else:
@@ -1241,16 +1216,10 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
             session_id_state,
         ],
         outputs=[
-            generated_section,
             generated_audio,
             text_prompt_display,
             single_output_group,
-            original_audio,
             generation_time_display,
-            reference_audio,
-            original_accordion,
-            reference_accordion,
-            reference_audio_header,
             batch_zip_download,
             batch_summary_display,
             batch_output_group,
