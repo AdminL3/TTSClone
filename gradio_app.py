@@ -840,45 +840,15 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
     session_id_state = gr.State(None)
 
     gr.Markdown("# Speaker Reference")
-    with gr.Row():
-        if AUDIO_PROMPT_FOLDER is not None and AUDIO_PROMPT_FOLDER.exists():
-            with gr.Column(scale=1, min_width=200):
-                gr.Markdown("#### Audio Library (click to load)")
-                audio_prompt_search = gr.Textbox(
-                    label="",
-                    placeholder="🔍 Search audio prompts...",
-                    lines=1,
-                    max_lines=1,
-                )
-                audio_prompt_table = gr.Dataframe(
-                    value=get_audio_prompt_files(),
-                    headers=["Filename"],
-                    datatype=["str"],
-                    row_count=(10, "dynamic"),
-                    col_count=(1, "fixed"),
-                    interactive=False,
-                    label="",
-                )
-        with gr.Column(scale=2):
-            custom_audio_input = gr.Audio(
-                sources=["upload", "microphone"],
-                type="filepath",
-                label="Speaker Reference Audio (first five minutes used; blank for no speaker reference)",
-                max_length=600,
-            )
+    custom_audio_input = gr.Audio(
+        sources=["upload"],
+        type="filepath",
+        label="Speaker Reference Audio (first five minutes used; blank for no speaker reference)",
+        max_length=600,
+    )
 
     gr.HTML('<hr class="section-separator">')
     gr.Markdown("# Text Prompt")
-    with gr.Accordion("Text Presets", open=True):
-        text_presets_table = gr.Dataframe(
-            value=load_text_presets(),
-            headers=["Category", "Words", "Preset Text"],
-            datatype=["str", "str", "str"],
-            row_count=(3, "dynamic"),
-            col_count=(3, "fixed"),
-            interactive=False,
-            column_widths=["12%", "6%", "82%"],
-        )
     text_prompt = gr.Textbox(
         label="Text Prompt", placeholder="[S1] Enter your text prompt here...", lines=4)
 
@@ -1118,14 +1088,6 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
                 label="Decoded Reference Audio (30s)", visible=True)
 
     # Event handlers
-    if AUDIO_PROMPT_FOLDER is not None and AUDIO_PROMPT_FOLDER.exists():
-        audio_prompt_table.select(
-            select_audio_prompt_file, outputs=[custom_audio_input])
-        audio_prompt_search.change(filter_audio_prompts, inputs=[
-                                   audio_prompt_search], outputs=[audio_prompt_table])
-
-    text_presets_table.select(select_text_preset, outputs=text_prompt)
-
     mode_selector.change(toggle_mode, inputs=[mode_selector], outputs=[
                          advanced_mode_column])
 
