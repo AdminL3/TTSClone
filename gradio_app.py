@@ -135,54 +135,6 @@ def create_zip_file(audio_files: list, session_id: str) -> Path:
     return zip_path
 
 
-def smart_split_by_sentences(text: str, target_min: int = 100, target_max: int = 150) -> list[str]:
-    """Split text by sentences and combine them to reach target length.
-
-    Args:
-        text: Input text to split
-        target_min: Minimum characters per chunk
-        target_max: Maximum characters per chunk
-
-    Returns:
-        List of text chunks with optimal length
-    """
-    import re
-
-    # Split by sentence endings (., !, ?) while preserving the punctuation
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-
-    # Filter out empty sentences
-    sentences = [s.strip() for s in sentences if s.strip()]
-
-    if not sentences:
-        return []
-
-    chunks = []
-    current_chunk = ""
-
-    for sentence in sentences:
-        # If adding this sentence would exceed target_max, save current chunk and start new one
-        if current_chunk and len(current_chunk) + len(sentence) + 1 > target_max:
-            chunks.append(current_chunk.strip())
-            current_chunk = sentence
-        else:
-            # Add sentence to current chunk
-            if current_chunk:
-                current_chunk += " " + sentence
-            else:
-                current_chunk = sentence
-
-    # Add the last chunk if it exists
-    if current_chunk:
-        # If the last chunk is too short and we have previous chunks, try to merge with last
-        if len(current_chunk) < target_min and len(chunks) > 0:
-            chunks[-1] += " " + current_chunk
-        else:
-            chunks.append(current_chunk.strip())
-
-    return chunks
-
-
 def to_bool(val: Any) -> bool:
     """Parse truthy values from common string/bool inputs."""
     return str(val).strip().lower() not in {"", "0", "false", "off", "none", "no"}
@@ -425,11 +377,11 @@ def generate_audio_batch(
     session_id: str,
     progress=gr.Progress(),
 ) -> Tuple[Any, Any, Any]:
-    """Generate multiple audio files by intelligently splitting text into optimal-length chunks."""
+    """Generate multiple audio files from newline-separated text."""
     global model_compiled, fish_ae_compiled
 
-    # Split by sentences and combine to optimal length (100-150 chars per chunk)
-    paragraphs = smart_split_by_sentences(text_prompt, target_min=100, target_max=150)
+    # Split by single newline and filter empty paragraphs
+    paragraphs = [p.strip() for p in text_prompt.split('\n') if p.strip()]
 
     # Handle edge cases
     if not paragraphs:
@@ -534,22 +486,22 @@ def generate_audio_batch(
         sequence_length=sample_latent_length_val,
     )
 
-    # Generate audio for each chunk
+    # Generate audio for each paragraph
     audio_files = []
     errors = []
 
-    for idx, chunk_text in enumerate(paragraphs, start=1):
+    for idx, paragraph_text in enumerate(paragraphs, start=1):
         progress((idx - 1) / len(paragraphs),
-                 desc=f"Generating chunk {idx}/{len(paragraphs)}")
+                 desc=f"Generating paragraph {idx}/{len(paragraphs)}")
 
         try:
-            # Call sample_pipeline for this chunk
+            # Call sample_pipeline for this paragraph
             audio_out, normalized_text = sample_pipeline(
                 model=active_model,
                 fish_ae=active_fish_ae,
                 pca_state=pca_state,
                 sample_fn=sample_fn,
-                text_prompt=chunk_text,
+                text_prompt=paragraph_text,
                 speaker_audio=speaker_audio,
                 rng_seed=rng_seed_int + idx,  # Increment seed for variety
                 pad_to_max_text_length=pad_to_max_text_length,
@@ -558,7 +510,7 @@ def generate_audio_batch(
             )
 
             # Save audio file with sequential naming
-            filename = f"chunk_{idx}"
+            filename = f"paragraph_{idx}"
             output_path = save_audio_with_format(
                 audio_out[0].cpu(),
                 TEMP_AUDIO_DIR,
@@ -569,7 +521,7 @@ def generate_audio_batch(
             audio_files.append(output_path)
 
         except Exception as e:
-            errors.append(f"Chunk {idx}: {str(e)}")
+            errors.append(f"Paragraph {idx}: {str(e)}")
             continue
 
     # Create ZIP file
@@ -588,7 +540,7 @@ def generate_audio_batch(
     summary = f"""### Batch Generation Complete
 
 **Statistics:**
-- Total chunks: {len(paragraphs)}
+- Total paragraphs: {len(paragraphs)}
 - Successfully generated: {len(audio_files)}
 - Failed: {len(errors)}
 - Total time: {generation_time:.2f}s
@@ -888,9 +840,9 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
         label="Text Prompt", placeholder="[S1] Enter your text prompt here...", lines=4)
 
     batch_mode_checkbox = gr.Checkbox(
-        label="Smart Split Mode",
+        label="Multi-file Mode",
         value=False,
-        info="Automatically split text by sentences and combine into optimal-length chunks (100-150 chars). Generates separate audio files and downloads as ZIP."
+        info="Split text by newline (\\n) and generate separate audio files. Downloads as ZIP."
     )
 
     gr.Markdown("# Generation")
