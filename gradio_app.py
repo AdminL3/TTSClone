@@ -1,4 +1,3 @@
-
 from inference import (
     load_model_from_hf,
     load_fish_ae_from_hf,
@@ -41,7 +40,7 @@ FISH_AE_DTYPE = torch.float32
 DEFAULT_SAMPLE_LATENT_LENGTH = 640  # decrease if OOM on 8GB vram GPU
 # DEFAULT_SAMPLE_LATENT_LENGTH = 576  # (example, ~27 seconds rather than ~30; can change depending on what fits in VRAM)
 
-# NOTE peak S1-DAC decoding VRAM > peak latent sampling VRAM, so decoding in chunks (which is posisble as S1-DAC is causal) would allow for full 640-length generation on lower VRAM GPUs
+# NOTE peak S1-DAC decoding VRAM > peak latent sampling VRAM, so decoding in chunks (which is possible as S1-DAC is causal) would allow for full 640-length generation on lower VRAM GPUs
 
 # --------------------------------------------------------------------
 
@@ -195,7 +194,7 @@ def generate_audio(
     use_compile: bool,
     show_original_audio: bool,
     session_id: str,
-) -> Tuple[Any, Any, Any, Any, Any, Any, Any, Any, Any]:
+) -> Tuple[Any, Any, Any, Any, Any]:
     """Generate audio using the model."""
     global model_compiled, fish_ae_compiled
 
@@ -310,43 +309,13 @@ def generate_audio(
     time_str = f"⏱️ Total generation time: {generation_time:.2f}s"
     text_display = f"**Text Prompt (normalized):**\n\n{normalized_text}"
 
-    recon_output_path = None
-    original_output_path = None
-
-    if reconstruct_first_30_seconds and speaker_audio is not None:
-        audio_recon = ae_reconstruct(
-            fish_ae=fish_ae,
-            pca_state=pca_state,
-            audio=torch.nn.functional.pad(
-                speaker_audio[..., :2048 * 640],
-                (0, max(0, 2048 * 640 - speaker_audio.shape[-1])),
-            )[None],
-        )[..., : speaker_audio.shape[-1]]
-
-        recon_stem = make_stem("speaker_recon", session_id)
-        recon_output_path = save_audio_with_format(
-            audio_recon.cpu()[0], TEMP_AUDIO_DIR, recon_stem, 44100, audio_format)
-
-    if show_original_audio and speaker_audio is not None:
-        original_stem = make_stem("original_audio", session_id)
-        original_output_path = save_audio_with_format(
-            speaker_audio.cpu(), TEMP_AUDIO_DIR, original_stem, 44100, audio_format)
-
-    show_reference_section = (
-        show_original_audio or reconstruct_first_30_seconds) and speaker_audio is not None
     return (
-        gr.update(),
-        gr.update(value=str(output_path), visible=True),
-        gr.update(value=text_display, visible=True),
-        gr.update(value=str(original_output_path)
-                  if original_output_path else None, visible=True),
+        gr.update(value=str(output_path), visible=True),  # generated_audio
+        gr.update(value=text_display, visible=True),      # text_prompt_display
+        gr.update(visible=True),                          # single_output_group
+        # generation_time_display
         gr.update(value=time_str, visible=True),
-        gr.update(value=str(recon_output_path)
-                  if recon_output_path else None, visible=True),
-        gr.update(visible=(show_original_audio and speaker_audio is not None)),
-        gr.update(
-            visible=(reconstruct_first_30_seconds and speaker_audio is not None)),
-        gr.update(visible=show_reference_section),
+        gr.update(),                                       # placeholder for compatibility
     )
 
 
@@ -389,7 +358,7 @@ def generate_audio_batch(
 
     if len(paragraphs) == 1:
         # Single paragraph: redirect to regular generation
-        return generate_audio(
+        single_outputs = generate_audio(
             text_prompt, speaker_audio_path, num_steps, rng_seed,
             cfg_scale_text, cfg_scale_speaker, cfg_min_t, cfg_max_t,
             truncation_factor, rescale_k, rescale_sigma, force_speaker,
@@ -399,6 +368,24 @@ def generate_audio_batch(
             sample_latent_length, audio_format, use_compile,
             show_original_audio, session_id
         )
+        # Return in batch format - need to create a single-file zip
+        # Extract the audio path from single_outputs[0]
+        audio_path_dict = single_outputs[0]
+        if 'value' in audio_path_dict:
+            audio_path = Path(audio_path_dict['value'])
+            zip_path = create_zip_file([audio_path], session_id)
+            summary = f"""### Single Paragraph Generation Complete
+
+**Statistics:**
+- Total paragraphs: 1
+- Successfully generated: 1
+- Failed: 0
+"""
+            return (
+                gr.update(value=str(zip_path), visible=True),
+                gr.update(value=summary, visible=True),
+                gr.update(visible=True),
+            )
 
     # Setup (model compilation, cleanup)
     if use_compile:
@@ -825,6 +812,62 @@ def init_session():
     return secrets.token_hex(8)
 
 
+def route_generation(batch_mode, *args):
+    """Route to single or batch generation based on checkbox."""
+    if batch_mode:
+        # Return batch outputs
+        try:
+            zip_file, summary, visibility = generate_audio_batch(*args)
+            return (
+                gr.update(visible=False),  # generated_audio (hide)
+                gr.update(visible=False),  # text_prompt_display (hide)
+                gr.update(visible=False),  # single_output_group (hide)
+                gr.update(visible=False),  # generation_time_display (hide)
+                zip_file,                  # batch_zip_download
+                summary,                   # batch_summary_display
+                visibility,                # batch_output_group
+            )
+        except Exception as e:
+            import traceback
+            error_msg = f"### Error\n\n{str(e)}\n\n```\n{traceback.format_exc()}\n```"
+            return (
+                gr.update(visible=False),  # generated_audio
+                gr.update(visible=False),  # text_prompt_display
+                gr.update(visible=False),  # single_output_group
+                gr.update(visible=False),  # generation_time_display
+                gr.update(visible=False),  # batch_zip_download
+                # batch_summary_display
+                gr.update(value=error_msg, visible=True),
+                gr.update(visible=True),   # batch_output_group
+            )
+    else:
+        # Return single outputs (existing behavior)
+        try:
+            outputs = generate_audio(*args)
+            return (
+                outputs[0],                # generated_audio
+                outputs[1],                # text_prompt_display
+                outputs[2],                # single_output_group
+                outputs[3],                # generation_time_display
+                gr.update(visible=False),  # batch_zip_download (hide)
+                gr.update(visible=False),  # batch_summary_display (hide)
+                gr.update(visible=False),  # batch_output_group (hide)
+            )
+        except Exception as e:
+            import traceback
+            error_msg = f"### Error\n\n{str(e)}\n\n```\n{traceback.format_exc()}\n```"
+            return (
+                gr.update(visible=False),  # generated_audio
+                # text_prompt_display (show error)
+                gr.update(value=error_msg, visible=True),
+                gr.update(visible=True),   # single_output_group
+                gr.update(visible=False),  # generation_time_display
+                gr.update(visible=False),  # batch_zip_download
+                gr.update(visible=False),  # batch_summary_display
+                gr.update(visible=False),  # batch_output_group
+            )
+
+
 with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
     session_id_state = gr.State(None)
 
@@ -845,7 +888,7 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
         info="Split text by newline (\\n) and generate separate audio files. Downloads as ZIP."
     )
 
-    gr.Markdown("# Generation")
+    gr.Markdown("# Generation Settings")
     with gr.Row():
         with gr.Column(scale=1):
             pass
@@ -1045,7 +1088,7 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
                 label="Show Autoencoder Reconstruction (only first 30s of reference)", value=False
             )
 
-    gr.Markdown("# Generation")
+    gr.Markdown("# Results")
     generation_time_display = gr.Markdown("", visible=False)
 
     # Single file output (original)
@@ -1059,7 +1102,7 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
     with gr.Group(visible=False) as batch_output_group:
         batch_summary_display = gr.Markdown("", visible=False)
         batch_zip_download = gr.File(
-            label="Download All Audio Files (ZIP)", visible=True)
+            label="Download All Audio Files (ZIP)", visible=False)
 
     # Event handlers
     mode_selector.change(toggle_mode, inputs=[mode_selector], outputs=[
@@ -1135,57 +1178,6 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
         ],
     )
 
-    def route_generation(batch_mode, *args):
-        """Route to single or batch generation based on checkbox."""
-        if batch_mode:
-            # Return batch outputs
-            try:
-                zip_file, summary, visibility = generate_audio_batch(*args)
-                return (
-                    gr.update(),  # generated_section
-                    gr.update(visible=False),  # generated_audio (hide)
-                    gr.update(visible=False),  # text_prompt_display (hide)
-                    gr.update(visible=False),  # single_output_group (hide)
-                    gr.update(visible=False),  # original_audio (hide)
-                    gr.update(visible=False),  # generation_time_display (hide)
-                    gr.update(visible=False),  # reference_audio (hide)
-                    gr.update(visible=False),  # original_accordion (hide)
-                    gr.update(visible=False),  # reference_accordion (hide)
-                    gr.update(visible=False),  # reference_audio_header (hide)
-                    zip_file,  # batch_zip_download
-                    summary,  # batch_summary_display
-                    visibility,  # batch_output_group
-                )
-            except Exception as e:
-                error_msg = f"### Error\n\n{str(e)}"
-                return (
-                    gr.update(),  # generated_section
-                    gr.update(visible=False),  # generated_audio
-                    gr.update(visible=False),  # text_prompt_display
-                    gr.update(visible=False),  # single_output_group
-                    gr.update(visible=False),  # original_audio
-                    gr.update(visible=False),  # generation_time_display
-                    gr.update(visible=False),  # reference_audio
-                    gr.update(visible=False),  # original_accordion
-                    gr.update(visible=False),  # reference_accordion
-                    gr.update(visible=False),  # reference_audio_header
-                    gr.update(visible=False),  # batch_zip_download
-                    # batch_summary_display
-                    gr.update(value=error_msg, visible=True),
-                    gr.update(visible=True),  # batch_output_group
-                )
-        else:
-            # Return single outputs (existing behavior)
-            outputs = generate_audio(*args)
-            # Add gr.update(visible=False) for batch components
-            return (
-                *outputs,
-                gr.update(visible=True),  # single_output_group (show)
-                gr.update(visible=False),  # batch_zip_download (hide)
-                gr.update(visible=False),  # batch_summary_display (hide)
-                gr.update(visible=False),  # batch_output_group (hide)
-            )
-
     generate_btn.click(
         route_generation,
         inputs=[
@@ -1216,13 +1208,13 @@ with gr.Blocks(title="Echo-TTS", css=LINK_CSS, js=JS_CODE) as demo:
             session_id_state,
         ],
         outputs=[
-            generated_audio,
-            text_prompt_display,
-            single_output_group,
-            generation_time_display,
-            batch_zip_download,
-            batch_summary_display,
-            batch_output_group,
+            generated_audio,           # 1
+            text_prompt_display,       # 2
+            single_output_group,       # 3
+            generation_time_display,   # 4
+            batch_zip_download,        # 5
+            batch_summary_display,     # 6
+            batch_output_group,        # 7
         ],
     )
 
